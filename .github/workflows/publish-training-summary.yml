@@ -1,0 +1,68 @@
+name: Publish Training Summary
+
+on:
+  workflow_run:
+    workflows: ["Train RL Agent"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v6
+
+      - name: Download training artifact
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v5
+        with:
+          pattern: pendulum-ppo-*
+          path: downloaded-results
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Prepare persistent summary
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          target="training-results/run-${RUN_NUMBER}"
+          mkdir -p "$target"
+          cat > "$target/run-info.md" <<EOF
+          # Training run ${RUN_NUMBER}
+
+          - conclusion: ${RUN_CONCLUSION}
+          - workflow run id: ${RUN_ID}
+          - source commit: ${RUN_SHA}
+          - run URL: ${RUN_URL}
+          EOF
+
+          for file in summary.md metrics.csv metadata.json; do
+            if [ -f "downloaded-results/$file" ]; then
+              cp "downloaded-results/$file" "$target/$file"
+            fi
+          done
+
+      - name: Commit result summary
+        env:
+          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add training-results/
+          if git diff --cached --quiet; then
+            echo "No summary changes to commit."
+          else
+            git commit -m "Publish training result for run #${RUN_NUMBER}"
+            git push
+          fi
