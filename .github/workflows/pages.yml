@@ -12,7 +12,7 @@ on:
       - ".github/workflows/pages.yml"
 
 permissions:
-  contents: read
+  contents: write
   actions: read
   pages: write
   id-token: write
@@ -108,3 +108,42 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Record deployment status
+        if: always()
+        env:
+          DEPLOY_OUTCOME: ${{ steps.deployment.outcome }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          SOURCE_RUN_ID: ${{ steps.source.outputs.run_id }}
+          SOURCE_RUN_URL: ${{ steps.source.outputs.run_url }}
+        run: |
+          git fetch origin main
+          git checkout -B main origin/main
+          mkdir -p .github
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          data = {
+              "deployment_outcome": os.environ.get("DEPLOY_OUTCOME", ""),
+              "page_url": os.environ.get("PAGE_URL", ""),
+              "source_training_run_id": os.environ.get("SOURCE_RUN_ID", ""),
+              "source_training_run_url": os.environ.get("SOURCE_RUN_URL", ""),
+              "pages_workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "source_commit": os.environ.get("GITHUB_SHA", ""),
+          }
+          Path(".github/pages-status.json").write_text(
+              json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/pages-status.json
+          if git diff --cached --quiet; then
+            echo "Pages status is unchanged."
+            exit 0
+          fi
+          git commit -m "Record Pages deployment status [skip ci]"
+          git push origin main
