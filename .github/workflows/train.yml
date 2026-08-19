@@ -17,6 +17,10 @@ on:
         required: true
         default: "42"
         type: string
+  push:
+    branches: [main]
+    paths:
+      - ".github/training-trigger/**"
 
 permissions:
   contents: read
@@ -34,6 +38,8 @@ jobs:
       MPLBACKEND: Agg
       SDL_VIDEODRIVER: dummy
       SDL_AUDIODRIVER: dummy
+      TRAIN_PRESET: ${{ inputs.preset || 'normal' }}
+      TRAIN_SEED: ${{ inputs.seed || '42' }}
 
     steps:
       - name: Checkout
@@ -53,11 +59,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Show training request
+        run: |
+          echo "event=${GITHUB_EVENT_NAME}"
+          echo "preset=${TRAIN_PRESET}"
+          echo "seed=${TRAIN_SEED}"
+
       - name: Train and evaluate
         run: |
           python -m src.train \
-            --preset "${{ inputs.preset }}" \
-            --seed "${{ inputs.seed }}" \
+            --preset "${TRAIN_PRESET}" \
+            --seed "${TRAIN_SEED}" \
             --output-dir results
 
       - name: Add result to job summary
@@ -71,7 +83,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: pendulum-ppo-${{ inputs.preset }}-seed-${{ inputs.seed }}-run-${{ github.run_number }}
+          name: pendulum-ppo-${{ env.TRAIN_PRESET }}-seed-${{ env.TRAIN_SEED }}-run-${{ github.run_number }}
           path: results/
           if-no-files-found: error
           retention-days: 30
