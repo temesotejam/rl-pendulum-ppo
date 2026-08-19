@@ -52,6 +52,17 @@ jobs:
           test -f ci-results/videos/04_100_percent.mp4
           test -f ci-results/plots/learning_curve.png
 
+      - name: Build dashboard smoke test
+        run: |
+          python web/build_pages.py \
+            --input ci-results \
+            --output ci-site \
+            --run-url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          test -f ci-site/index.html
+          test -f ci-site/videos/00_random.mp4
+          test -f ci-site/videos/04_100_percent.mp4
+          test -f ci-site/plots/learning_curve.png
+
       - name: Add training summary
         if: always()
         run: |
