@@ -14,6 +14,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
+from .environment import SensorNoiseConfig, make_pendulum_env
 from .evaluation import evaluate_episode, evaluate_policy
 from .reporting import create_plots, write_metrics_csv, write_summary
 
@@ -30,7 +31,7 @@ CHECKPOINTS = [
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train PPO on Gymnasium Pendulum-v1.")
+    parser = argparse.ArgumentParser(description="Train PPO on a noisy-observation Pendulum-v1.")
     parser.add_argument("--preset", choices=["quick", "normal", "long"], default="normal")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", type=Path, default=Path("results"))
@@ -64,13 +65,15 @@ def record_stage(
     policy,
     evaluation_seeds: list[int],
     video_seed: int,
+    sensor_noise: SensorNoiseConfig,
     videos_dir: Path,
     video_index: int,
 ) -> None:
-    metrics = evaluate_policy(policy, evaluation_seeds)
+    metrics = evaluate_policy(policy, evaluation_seeds, sensor_noise=sensor_noise)
     evaluate_episode(
         policy,
         seed=video_seed,
+        sensor_noise=sensor_noise,
         video_path=videos_dir / f"{video_index:02d}_{stage}.mp4",
     )
     records.append(
@@ -90,6 +93,7 @@ def record_stage(
 def main() -> None:
     args = parse_args()
     config = load_config(args.preset)
+    sensor_noise = SensorNoiseConfig.from_dict(config.get("sensor_noise"))
     set_global_seed(args.seed)
 
     output_dir = args.output_dir.resolve()
@@ -103,6 +107,8 @@ def main() -> None:
     evaluation_seeds = [args.seed + 100 + index for index in range(evaluation_episodes)]
     video_seed = args.seed + 999
 
+    print(f"Sensor noise model: {sensor_noise.to_dict()}")
+
     records: list[dict] = []
     record_stage(
         records,
@@ -112,13 +118,18 @@ def main() -> None:
         policy=None,
         evaluation_seeds=evaluation_seeds,
         video_seed=video_seed,
+        sensor_noise=sensor_noise,
         videos_dir=videos_dir,
         video_index=0,
     )
 
     ppo = config["ppo"]
+
+    def env_factory():
+        return make_pendulum_env(sensor_noise=sensor_noise)
+
     env = make_vec_env(
-        "Pendulum-v1",
+        env_factory,
         n_envs=int(ppo["n_envs"]),
         seed=args.seed,
         vec_env_cls=SubprocVecEnv,
@@ -162,6 +173,7 @@ def main() -> None:
             policy=model,
             evaluation_seeds=evaluation_seeds,
             video_seed=video_seed,
+            sensor_noise=sensor_noise,
             videos_dir=videos_dir,
             video_index=video_index,
         )
@@ -181,6 +193,7 @@ def main() -> None:
         "actual_final_timesteps": int(records[-1]["timesteps"]),
         "evaluation_seeds": evaluation_seeds,
         "video_seed": video_seed,
+        "sensor_noise": sensor_noise.to_dict(),
         "config": config,
         "versions": version_info(),
     }
