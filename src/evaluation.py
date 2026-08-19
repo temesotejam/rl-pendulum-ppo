@@ -10,6 +10,8 @@ import gymnasium as gym
 import imageio.v2 as imageio
 import numpy as np
 
+from .environment import SensorNoiseConfig, make_pendulum_env
+
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
@@ -47,13 +49,25 @@ def _action(policy: PredictPolicy | None, env: gym.Env, observation: np.ndarray)
     return np.asarray(action, dtype=np.float32)
 
 
+def _true_state(env: gym.Env) -> tuple[float, float]:
+    """Return the simulator's true angle and angular velocity.
+
+    The policy never receives these values directly when sensor noise is enabled.
+    They are used only for objective scoring and plots.
+    """
+    state = np.asarray(env.unwrapped.state, dtype=np.float64)
+    theta = math.atan2(math.sin(float(state[0])), math.cos(float(state[0])))
+    return theta, float(state[1])
+
+
 def evaluate_episode(
     policy: PredictPolicy | None,
     seed: int,
+    sensor_noise: SensorNoiseConfig,
     video_path: Path | None = None,
 ) -> EpisodeMetrics:
     render_mode = "rgb_array" if video_path is not None else None
-    env = gym.make("Pendulum-v1", render_mode=render_mode)
+    env = make_pendulum_env(sensor_noise=sensor_noise, render_mode=render_mode)
     env.action_space.seed(seed + 10_000)
     observation, _ = env.reset(seed=seed)
 
@@ -71,13 +85,15 @@ def evaluate_episode(
     terminated = False
     truncated = False
     while not (terminated or truncated):
+        # `observation` contains simulated sensor error. The policy never sees
+        # the true simulator state below.
         action = _action(policy, env, observation)
         observation, reward, terminated, truncated, _ = env.step(action)
         episode_return += float(reward)
 
-        theta = math.atan2(float(observation[1]), float(observation[0]))
+        theta, theta_dot = _true_state(env)
         angles.append(theta)
-        angular_velocities.append(float(observation[2]))
+        angular_velocities.append(theta_dot)
         torques.append(float(np.asarray(action).reshape(-1)[0]))
 
         if video_path is not None:
@@ -107,8 +123,12 @@ def evaluate_episode(
 def evaluate_policy(
     policy: PredictPolicy | None,
     seeds: list[int],
+    sensor_noise: SensorNoiseConfig,
 ) -> AggregateMetrics:
-    episodes = [evaluate_episode(policy, seed=seed) for seed in seeds]
+    episodes = [
+        evaluate_episode(policy, seed=seed, sensor_noise=sensor_noise)
+        for seed in seeds
+    ]
 
     returns = np.asarray([item.episode_return for item in episodes], dtype=np.float64)
     return AggregateMetrics(
