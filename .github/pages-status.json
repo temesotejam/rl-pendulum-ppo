@@ -1,0 +1,8 @@
+{
+  "deployment_outcome": "success",
+  "page_url": "https://temesotejam.github.io/rl-pendulum-ppo/",
+  "source_training_run_id": "32238256351",
+  "source_training_run_url": "https://github.com/temesotejam/rl-pendulum-ppo/actions/runs/32238256351",
+  "pages_workflow_run_id": "32239920447",
+  "source_commit": "3b97d225b9ea85dd77aadcb5ad2662e2c2fad7de"
+}
