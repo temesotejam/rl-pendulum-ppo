@@ -1,0 +1,4 @@
+Training request
+preset: normal
+seed: 42
+reason: first full 100,000-step Pendulum-v1 PPO training run after smoke-test validation
